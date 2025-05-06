@@ -1,0 +1,105 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Ekran Yayıncısı</title>
+    <script src="https://unpkg.com/peerjs@1.5.2/dist/peerjs.min.js"></script>
+    <style>
+        body { font-family: sans-serif; margin: 20px; background-color: #f0f0f0; }
+        #localVideo { border: 2px solid #333; width: 400px; max-width: 100%; background-color: #000;}
+        .container { background-color: #fff; padding: 20px; border-radius: 8px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); }
+        button { padding: 10px 15px; font-size: 16px; cursor: pointer; background-color: #007bff; color: white; border: none; border-radius: 4px; }
+        button:hover { background-color: #0056b3; }
+        #peerIdDisplay { margin-top: 15px; font-weight: bold; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Ekran Yayıncısı</h1>
+        <p>Bu sizin yayıncı sayfanız. Aşağıdaki butona tıklayarak ekranınızı paylaşmaya başlayın.</p>
+        <button id="startStreamBtn">Ekranı Paylaşmaya Başla</button>
+        <div id="peerIdDisplay">Yayın ID'niz burada görünecek.</div>
+        <h2>Yerel Önizleme:</h2>
+        <video id="localVideo" autoplay muted playsinline></video>
+    </div>
+
+    <script>
+        const localVideo = document.getElementById('localVideo');
+        const startStreamBtn = document.getElementById('startStreamBtn');
+        const peerIdDisplay = document.getElementById('peerIdDisplay');
+        let localStream;
+        let peer; // PeerJS nesnesi için global tanımlama
+
+        // PeerJS bağlantısını başlat
+        // Ücretsiz PeerServer kullanıyoruz. Kendi sunucunuz varsa burayı güncelleyebilirsiniz.
+        // Rastgele bir ID oluşturması için ID belirtmiyoruz.
+        peer = new Peer();
+
+        peer.on('open', function(id) {
+            console.log('PeerJS bağlantısı başarılı. Yayın ID\'niz: ' + id);
+            peerIdDisplay.textContent = 'Yayın ID\'niz: ' + id + ' (Bu ID\'yi izleyici ile paylaşın)';
+        });
+
+        peer.on('error', function(err) {
+            console.error('PeerJS Hatası:', err);
+            alert('PeerJS bağlantı hatası: ' + err.message);
+        });
+
+        startStreamBtn.onclick = async () => {
+            if (!peer || !peer.id) {
+                alert('PeerJS bağlantısı henüz kurulmadı. Lütfen biraz bekleyin ve Yayın ID\'nizin göründüğünden emin olun.');
+                return;
+            }
+
+            try {
+                // 1080p 60fps istemeye çalışalım, ancak tarayıcı desteklemeyebilir.
+                const displayMediaOptions = {
+                    video: {
+                        cursor: "always",
+                        width: { ideal: 1920, max: 1920 },
+                        height: { ideal: 1080, max: 1080 },
+                        frameRate: { ideal: 60, max: 60 }
+                    },
+                    audio: {
+                        echoCancellation: true,
+                        noiseSuppression: true,
+                        sampleRate: 44100
+                    }
+                };
+
+                localStream = await navigator.mediaDevices.getDisplayMedia(displayMediaOptions);
+                localVideo.srcObject = localStream;
+                localVideo.play(); // Bazen autoplay çalışmayabilir, manuel tetikleyelim.
+
+                console.log('Ekran yakalama başarılı. İzleyicilerin bağlanması bekleniyor...');
+                peerIdDisplay.textContent = `Yayın ID: ${peer.id} - Yayın başladı! Bu ID'yi izleyici ile paylaşın.`;
+                startStreamBtn.disabled = true;
+                startStreamBtn.textContent = 'Yayın Başlatıldı';
+
+                // Birisi bizim ID'mizi kullanarak arama yaptığında (call)
+                peer.on('call', (call) => {
+                    console.log(call.peer + ' ID\'li izleyici bağlanıyor...');
+                    // Gelen çağrıyı kendi medya akışımızla yanıtla
+                    call.answer(localStream);
+
+                    // Bağlantı kapandığında
+                    call.on('close', () => {
+                        console.log(call.peer + ' ID\'li izleyicinin bağlantısı kapandı.');
+                    });
+                     call.on('error', (err) => {
+                        console.error(call.peer + ' ID\'li izleyiciyle bağlantı hatası:', err);
+                    });
+                });
+
+            } catch (err) {
+                console.error("Ekran yakalama hatası: ", err);
+                alert("Ekran yakalanamadı: " + err.message);
+                peerIdDisplay.textContent = 'Yayın ID\'niz: ' + peer.id + ' (Ekran paylaşılamadı)';
+                startStreamBtn.disabled = false;
+                startStreamBtn.textContent = 'Ekranı Paylaşmaya Başla';
+            }
+        };
+    </script>
+</body>
+</html>
