@@ -1,50 +1,27 @@
 <!DOCTYPE html>
 <html lang="tr">
 <head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-  <title>PeerJS Ekran Yayını</title>
+  <meta charset="UTF-8">
+  <title>Ekran Yayını</title>
   <style>
-    body {
-      font-family: sans-serif;
-      background: #111;
-      color: #fff;
-      text-align: center;
-      padding: 2rem;
-    }
-    video {
-      width: 90%;
-      max-width: 800px;
-      border: 3px solid #0f0;
-      border-radius: 10px;
-      margin-top: 1rem;
-    }
-    input, button {
-      padding: 0.5rem;
-      font-size: 1rem;
-      margin: 0.5rem;
-    }
+    body { background: #000; color: #fff; text-align: center; font-family: sans-serif; }
+    video { width: 90%; max-width: 800px; margin-top: 20px; border: 2px solid lime; }
   </style>
 </head>
 <body>
-  <h1>🖥️ Ekran Yayını / İzle</h1>
+  <h1>PeerJS ile Ekran Yayını</h1>
+  <p>ID: <span id="my-id">...</span></p>
 
-  <div>
-    <button id="startBroadcast">🟢 Ekranı Yayınla</button>
-    <input type="text" id="targetPeerId" placeholder="Yayıncı ID'si">
-    <button id="watchBroadcast">🔴 Yayını İzle</button>
-  </div>
+  <button id="start">🖥️ Yayını Başlat</button>
+  <input type="text" id="target-id" placeholder="Yayıncı ID gir">
+  <button id="watch">📺 İzle</button>
 
-  <p><strong>Senin ID:</strong> <span id="my-id">...</span></p>
   <video id="video" autoplay playsinline controls muted></video>
 
   <script src="https://cdn.jsdelivr.net/npm/peerjs@1.5.2/dist/peerjs.min.js"></script>
   <script>
     const video = document.getElementById('video');
-    const myIdSpan = document.getElementById('my-id');
-    const startBroadcastBtn = document.getElementById('startBroadcast');
-    const watchBroadcastBtn = document.getElementById('watchBroadcast');
-    const targetPeerIdInput = document.getElementById('targetPeerId');
+    const myId = document.getElementById('my-id');
 
     const peer = new Peer({
       host: 'peercik.onrender.com',
@@ -54,38 +31,29 @@
     });
 
     peer.on('open', id => {
-      myIdSpan.textContent = id;
+      myId.textContent = id;
     });
 
-    // 🎥 Yayıncı - Sadece ekran + ses (1080p 60fps hedefleniyor)
-    startBroadcastBtn.onclick = async () => {
-      try {
-        const stream = await navigator.mediaDevices.getDisplayMedia({
-          video: {
-            frameRate: 60,
-            width: { ideal: 1920 },
-            height: { ideal: 1080 }
-          },
-          audio: true // sistem sesi için
-        });
+    document.getElementById('start').onclick = async () => {
+      const stream = await navigator.mediaDevices.getDisplayMedia({
+        video: {
+          width: { ideal: 1920 },
+          height: { ideal: 1080 },
+          frameRate: 60
+        },
+        audio: true
+      });
+      video.srcObject = stream;
 
-        video.srcObject = stream;
-
-        peer.on('call', call => {
-          call.answer(stream);
-        });
-      } catch (err) {
-        alert("Ekran paylaşımı reddedildi veya hata oluştu.");
-        console.error(err);
-      }
+      peer.on('call', call => {
+        call.answer(stream);
+      });
     };
 
-    // 👀 İzleyici
-    watchBroadcastBtn.onclick = () => {
-      const targetId = targetPeerIdInput.value.trim();
-      if (!targetId) return alert("Bir yayıncı ID'si girmelisiniz.");
-
-      const call = peer.call(targetId, null);
+    document.getElementById('watch').onclick = () => {
+      const id = document.getElementById('target-id').value.trim();
+      if (!id) return alert("ID gir!");
+      const call = peer.call(id, null);
       call.on('stream', remoteStream => {
         video.srcObject = remoteStream;
       });
