@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-  <title>PeerJS Yayın / İzleme</title>
+  <title>PeerJS Ekran Yayını</title>
   <style>
     body {
       font-family: sans-serif;
@@ -14,7 +14,7 @@
     }
     video {
       width: 90%;
-      max-width: 600px;
+      max-width: 800px;
       border: 3px solid #0f0;
       border-radius: 10px;
       margin-top: 1rem;
@@ -27,16 +27,16 @@
   </style>
 </head>
 <body>
-  <h1>📡 PeerJS Yayın / İzle</h1>
+  <h1>🖥️ Ekran Yayını / İzle</h1>
 
   <div>
-    <button id="startBroadcast">🎥 Yayın Başlat</button>
+    <button id="startBroadcast">🟢 Ekranı Yayınla</button>
     <input type="text" id="targetPeerId" placeholder="Yayıncı ID'si">
-    <button id="watchBroadcast">👀 Yayını İzle</button>
+    <button id="watchBroadcast">🔴 Yayını İzle</button>
   </div>
 
-  <p><strong>ID:</strong> <span id="my-id">...</span></p>
-  <video id="video" autoplay playsinline></video>
+  <p><strong>Senin ID:</strong> <span id="my-id">...</span></p>
+  <video id="video" autoplay playsinline controls muted></video>
 
   <script src="https://cdn.jsdelivr.net/npm/peerjs@1.5.2/dist/peerjs.min.js"></script>
   <script>
@@ -57,14 +57,27 @@
       myIdSpan.textContent = id;
     });
 
-    // 🎥 Yayıncı
+    // 🎥 Yayıncı - Sadece ekran + ses (1080p 60fps hedefleniyor)
     startBroadcastBtn.onclick = async () => {
-      const stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
-      video.srcObject = stream;
+      try {
+        const stream = await navigator.mediaDevices.getDisplayMedia({
+          video: {
+            frameRate: 60,
+            width: { ideal: 1920 },
+            height: { ideal: 1080 }
+          },
+          audio: true // sistem sesi için
+        });
 
-      peer.on('call', call => {
-        call.answer(stream);
-      });
+        video.srcObject = stream;
+
+        peer.on('call', call => {
+          call.answer(stream);
+        });
+      } catch (err) {
+        alert("Ekran paylaşımı reddedildi veya hata oluştu.");
+        console.error(err);
+      }
     };
 
     // 👀 İzleyici
