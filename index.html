@@ -37,98 +37,118 @@
     const watchButton = document.getElementById('watch');
     const targetIdInput = document.getElementById('target-id');
 
-    let localStream = null; // Yerel medya akışını (ekran görüntüsü + ses) tutar
-    let peer = null;        // PeerJS nesnesi
-    let currentCall = null; // Mevcut aktif çağrıyı (izleyici için) tutar
+    let localStream = null;
+    let peer = null;
+    let currentCall = null;
 
-    // PeerJS Sunucu Bilgileri (Kendi sunucunuzu veya test sunucusunu kullanabilirsiniz)
     const peerJsConfig = {
-      host: 'peercik.onrender.com', 
+      host: 'peercik.onrender.com', // Render sunucu adresiniz
       port: 443,
       path: '/myapp',
       secure: true,
-      // debug: 3 // Hata ayıklama seviyesi (0: kapalı, 1: hatalar, 2: uyarılar, 3: tüm loglar)
+      // debug: 3 // Gerekirse hata ayıklama seviyesini artırın
     };
 
     function initializePeer() {
-      // Yeni bir Peer nesnesi oluşturulur. ID sunucu tarafından atanır (ilk argüman undefined).
+      console.log("PeerJS başlatılıyor...");
+      if (peer) {
+        console.log("Mevcut Peer nesnesi temizleniyor.");
+        peer.destroy(); // Önceki bağlantıyı temizle (varsa)
+      }
       peer = new Peer(undefined, peerJsConfig);
 
-      // PeerJS bağlantısı başarıyla açıldığında tetiklenir.
       peer.on('open', id => {
         myIdSpan.textContent = id;
-        console.log('PeerJS bağlantısı açıldı. Benim ID:', id);
-        startButton.disabled = false;
-        watchButton.disabled = false;
-        targetIdInput.disabled = false;
+        console.log('PeerJS bağlantısı açıldı. Benim ID:', id, 'Peer.open:', peer.open);
+        enableControls();
       });
 
-      // Başka bir peer'den çağrı geldiğinde tetiklenir.
       peer.on('call', incomingCall => {
         console.log('Gelen çağrı:', incomingCall.peer);
         if (localStream) {
-          // Eğer bir yayın yapılıyorsa (localStream mevcutsa), gelen çağrıyı yanıtla.
           console.log(`${incomingCall.peer} adlı kullanıcıya yayınla cevap veriliyor.`);
-          incomingCall.answer(localStream); 
+          incomingCall.answer(localStream);
           
-          // Gelen çağrı için olay dinleyicileri
+          incomingCall.on('stream', remoteStream_broadcaster => {
+             // Yayıncı olarak, izleyiciden bir stream beklemiyoruz, ama olay burada.
+             console.log("Yayıncı: İzleyiciden 'stream' olayı geldi (beklenmedik, izleyici stream göndermemeli):", remoteStream_broadcaster);
+          });
           incomingCall.on('close', () => {
-            console.log(`İzleyici ${incomingCall.peer} bağlantısı kapandı.`);
+            console.log(`İzleyici ${incomingCall.peer} bağlantısı kapandı (yayıncı tarafı).`);
           });
           incomingCall.on('error', err => {
-            console.error(`Gelen çağrıda (${incomingCall.peer}) hata:`, err);
+            console.error(`Gelen çağrıda (${incomingCall.peer}) hata (yayıncı tarafı):`, err);
           });
         } else {
           console.warn('Gelen çağrı var ancak yerel yayın (localStream) mevcut değil. Çağrı yoksayılıyor.');
-          // İsteğe bağlı: incomingCall.close(); // Çağrıyı reddetmek için
+          // incomingCall.close(); // İsteğe bağlı olarak çağrıyı reddedebilirsiniz
         }
       });
 
-      // PeerJS genel hata durumlarında tetiklenir.
       peer.on('error', err => {
-        console.error('PeerJS Hatası:', err);
+        console.error('PeerJS Genel Hatası:', err, 'Peer.open:', peer ? peer.open : 'peer yok', 'Peer.disconnected:', peer ? peer.disconnected : 'peer yok');
         myIdSpan.textContent = "Bağlantı Hatası!";
-        alert(`PeerJS Bağlantı Hatası: ${err.message}\n\nLütfen sayfayı yenileyin veya PeerJS sunucu ayarlarını kontrol edin.`);
-        disableControlsOnError();
-        if (err.type === 'peer-unavailable') {
-            alert('Aranan kullanıcı IDsi bulunamadı veya çevrimdışı.');
-        } else if (err.type === 'network') {
-            alert('Ağ hatası. İnternet bağlantınızı veya PeerJS sunucusuna erişimi kontrol edin.');
-        } else if (err.type === 'server-error') {
-            alert('PeerJS sunucusunda bir hata oluştu.');
+        if (!alert(`PeerJS Bağlantı Hatası: ${err.message}\n\nLütfen sayfayı yenileyin veya PeerJS sunucu ayarlarını kontrol edin.`)) {
+            // Alert kapatıldıktan sonra butonları devre dışı bırak
+            disableControlsOnError();
         }
+        
+        if (err.type === 'peer-unavailable') {
+             alert('Aranan kullanıcı IDsi bulunamadı veya çevrimdışı.');
+        } else if (err.type === 'network') {
+             alert('Ağ hatası. İnternet bağlantınızı veya PeerJS sunucusuna erişimi kontrol edin.');
+        } else if (err.type === 'server-error') {
+             alert('PeerJS sunucusunda bir hata oluştu.');
+        } else if (err.type === 'socket-error' && err.message === 'Socket closed') {
+            myIdSpan.textContent = "Sunucu bağlantısı kapandı.";
+        }
+        // Hata sonrası kontrolleri devre dışı bırak
+        disableControlsOnError();
       });
 
-      // PeerJS sunucusuyla bağlantı kesildiğinde tetiklenir.
       peer.on('disconnected', () => {
-        console.warn('PeerJS sunucusuyla bağlantı kesildi. Yeniden bağlanmaya çalışılıyor...');
+        console.warn('PeerJS sunucusuyla bağlantı kesildi. Yeniden bağlanmaya çalışılıyor... Peer.open:', peer.open);
         myIdSpan.textContent = "Bağlantı kesildi...";
-        // PeerJS genellikle otomatik olarak yeniden bağlanmayı dener.
-        // Butonları geçici olarak devre dışı bırakmak iyi bir pratik olabilir.
+        // Bağlantı kesildiğinde kontrolleri devre dışı bırakmak iyi bir pratiktir.
+        // PeerJS otomatik yeniden bağlanmayı dener, 'open' event'i tekrar tetiklenirse kontroller açılır.
+        disableControlsOnDisconnect();
       });
 
-      // Peer bağlantısı tamamen kapatıldığında (destroy edildiğinde) tetiklenir.
       peer.on('close', () => {
-        console.log('Peer bağlantısı tamamen kapandı.');
+        console.log('Peer bağlantısı tamamen kapandı (destroy edildi). Peer.open:', peer.open);
         myIdSpan.textContent = "Kapalı";
         disableControlsOnError();
       });
     }
 
-    function disableControlsOnError() {
+    function enableControls() {
+        startButton.disabled = false;
+        watchButton.disabled = false;
+        targetIdInput.disabled = false;
+        console.log("Kontroller etkinleştirildi.");
+    }
+
+    function disableControlsOnDisconnect() {
+        console.log("Bağlantı kesildi, kontroller geçici olarak devre dışı bırakılıyor.");
         startButton.disabled = true;
         watchButton.disabled = true;
         targetIdInput.disabled = true;
     }
 
+    function disableControlsOnError() {
+        console.log("Hata nedeniyle kontroller kalıcı olarak devre dışı bırakılıyor.");
+        startButton.disabled = true;
+        watchButton.disabled = true;
+        targetIdInput.disabled = true;
+    }
+    
     // Başlangıçta butonlar PeerJS bağlanana kadar devre dışı bırakılır.
     startButton.disabled = true; 
     watchButton.disabled = true;
     targetIdInput.disabled = true;
 
-    // "Yayını Başlat" butonu tıklama olayı
     startButton.onclick = async () => {
-      if (localStream) { // Eğer zaten yayın yapılıyorsa, bu buton "Yayını Durdur" işlevindedir.
+      if (localStream) {
         stopBroadcast();
         return;
       }
@@ -136,30 +156,21 @@
       try {
         console.log('Ekran yayını başlatılıyor...');
         localStream = await navigator.mediaDevices.getDisplayMedia({
-          video: {
-            width: { ideal: 1920, max: 1920 },
-            height: { ideal: 1080, max: 1080 },
-            frameRate: { ideal: 30, max: 60 } 
-          },
-          audio: { // Ekran sesi paylaşımı için (tarayıcı ve OS desteğine bağlı)
-            echoCancellation: true,
-            noiseSuppression: true,
-            sampleRate: 44100
-          }
+          video: { width: { ideal: 1920, max: 1920 }, height: { ideal: 1080, max: 1080 }, frameRate: { ideal: 30, max: 60 } },
+          audio: { echoCancellation: true, noiseSuppression: true, sampleRate: 44100 }
         });
         
         videoElement.srcObject = localStream;
-        videoElement.play().catch(e => console.warn("Yerel video oynatma hatası (otomatik oynatma engellenmiş olabilir):", e));
+        videoElement.play().catch(e => console.warn("Yerel video oynatma hatası:", e));
         console.log('Ekran yakalama başarılı. Yayın başladı.');
         
         startButton.textContent = "Yayını Durdur";
-        watchButton.disabled = true;  // Yayın yaparken izleme butonunu devre dışı bırak
+        watchButton.disabled = true; 
         targetIdInput.disabled = true;
 
-        // Kullanıcı tarayıcı arayüzünden ekran paylaşımını durdurursa
         localStream.getVideoTracks()[0].onended = () => {
-            console.log("Ekran paylaşımı kullanıcı tarafından veya bir nedenle sonlandırıldı.");
-            stopBroadcast();
+          console.log("Ekran paylaşımı kullanıcı tarafından veya bir nedenle sonlandırıldı.");
+          stopBroadcast();
         };
 
       } catch (err) {
@@ -172,27 +183,29 @@
     function stopBroadcast() {
         console.log("Yayın durduruluyor...");
         if (localStream) {
-            localStream.getTracks().forEach(track => track.stop()); // Tüm medya izlerini durdur
+            localStream.getTracks().forEach(track => track.stop());
             localStream = null;
         }
-        videoElement.srcObject = null; // Video elementini temizle
+        videoElement.srcObject = null;
         
         startButton.textContent = "🖥️ Yayını Başlat";
-        // PeerJS hala bağlıysa izleme kontrollerini tekrar aktif et
-        if (peer && !peer.disconnected && !peer.destroyed) {
+        // PeerJS hala bağlı ve 'open' ise izleme kontrollerini tekrar aktif et
+        if (peer && peer.open && !peer.destroyed) {
             watchButton.disabled = false;
             targetIdInput.disabled = false;
+        } else if (peer && (!peer.open || peer.destroyed)) {
+            // Eğer peer bağlantısı sağlıklı değilse, kontrolleri devre dışı tut
+            disableControlsOnDisconnect(); // veya disableControlsOnError()
         }
         console.log("Yayın durduruldu.");
     }
 
-    // "İzle" butonu tıklama olayı
     watchButton.onclick = () => {
-      if (currentCall) { // Zaten bir yayın izleniyorsa, tekrar basıldığında bağlantıyı kes
-          console.log("Mevcut yayın sonlandırılıyor...");
-          currentCall.close(); // Bu, 'close' olayını tetikleyecektir.
-          // currentCall ve UI resetleme 'close' handler'ında yapılacak.
-          return;
+      if (currentCall) {
+        console.log("Mevcut yayın sonlandırılıyor...");
+        currentCall.close();
+        // resetWatchUI(), 'close' handler'ında çağrılacak.
+        return;
       }
 
       const targetId = targetIdInput.value.trim();
@@ -201,9 +214,16 @@
         return;
       }
 
-      if (!peer || peer.disconnected || peer.destroyed) {
-        alert("PeerJS bağlantısı aktif değil. Lütfen sayfayı yenileyin veya bağlantının kurulmasını bekleyin.");
-        console.error("İzleme denemesi başarısız: PeerJS bağlantısı yok veya kopuk.");
+      console.log('İzleme butonuna tıklandı. Mevcut Peer durumu:', {
+          id: peer ? peer.id : 'Peer yok/null',
+          disconnected: peer ? peer.disconnected : 'Peer yok/null',
+          destroyed: peer ? peer.destroyed : 'Peer yok/null',
+          open: peer ? peer.open : 'Peer yok/null' // peer.open özelliğini loglayın
+      });
+
+      if (!peer || peer.disconnected || peer.destroyed || (peer && !peer.open)) {
+        alert("PeerJS bağlantısı aktif değil veya tam olarak kurulmamış. Lütfen sayfayı yenileyin veya bağlantının kurulmasını bekleyin.");
+        console.error("İzleme denemesi başarısız: PeerJS bağlantısı yok, kopuk veya 'open' değil. Peer nesnesi:", peer);
         return;
       }
       
@@ -214,61 +234,68 @@
 
       console.log(`'${targetId}' ID'li yayıncıya bağlanılıyor...`);
       
-      // Yayıncıya çağrı gönderilir. İkinci argüman 'null' çünkü biz sadece izleyiciyiz, kendi medyamızı göndermiyoruz.
-      const call = peer.call(targetId, null); 
-      currentCall = call; // Mevcut çağrıyı sakla
+      console.log('peer.call çağrılmadan hemen önce. Peer.id:', peer.id, 'Peer.open:', peer.open, 'Peer.disconnected:', peer.disconnected, 'Peer.destroyed:', peer.destroyed);
 
-      // !!! ÖNEMLİ KONTROL !!!
-      // peer.call() normalde bir MediaConnection nesnesi döndürmelidir.
-      // Eğer 'undefined' dönerse, bu PeerJS'in içsel bir hatası veya ciddi bir bağlantı sorunudur.
+      const call = peer.call(targetId, null); // İzleyici olarak kendi stream'imizi göndermiyoruz (null)
+      currentCall = call; 
+
       if (!call) {
         console.error("KRİTİK HATA: peer.call() 'undefined' döndürdü. Bu, PeerJS'in düzgün çalışmadığını gösterir. Peer nesnesi:", peer);
         alert("Yayıncıya çağrı başlatılamadı (call nesnesi oluşturulamadı).\nKonsolu kontrol edin. PeerJS bağlantınızda veya sunucuda bir sorun olabilir.");
-        currentCall = null;
+        currentCall = null; 
+        // Arayüzü sıfırlayabiliriz veya butonları ayarlayabiliriz.
+        // resetWatchUI(); // Hata sonrası arayüzü sıfırlamak için
+        watchButton.textContent = "📺 İzle";
+        if (peer && peer.open && !peer.destroyed && !localStream) startButton.disabled = false; // Eğer yayın yapmıyorsak ve peer sağlamsa
+        targetIdInput.disabled = false;
         return;
       }
 
       console.log("Çağrı nesnesi oluşturuldu. Yayıncının yanıtı ve medya akışı bekleniyor...", call);
       watchButton.textContent = "Bağlantıyı Kes";
-      startButton.disabled = true; // İzleme sırasında yayın başlatmayı engelle
+      startButton.disabled = true; 
       targetIdInput.disabled = true;
 
-
-      // Yayıncıdan medya akışı (stream) geldiğinde tetiklenir.
       call.on('stream', remoteStream => {
         console.log('Uzak yayın (stream) alındı:', remoteStream);
         videoElement.srcObject = remoteStream;
-        videoElement.muted = false; // İzleyici aktif olarak izlemeye başladığı için sesi açabiliriz (tarayıcı politikalarına bağlı)
-        videoElement.play().catch(e => console.warn("Uzak video oynatma hatası (otomatik oynatma engellenmiş olabilir):", e));
+        videoElement.muted = false; 
+        videoElement.play().catch(e => console.warn("Uzak video oynatma hatası:", e));
         alert(`'${targetId}' ID'li yayıncının yayınına bağlanıldı!`);
       });
 
-      // Çağrı sırasında bir hata oluşursa tetiklenir.
       call.on('error', err => {
         console.error(`Çağrı sırasında hata (${call.peer}):`, err);
         alert(`Çağrı hatası: ${err.message}\n\nYayıncı ID'sinin doğru olduğundan ve yayıncının yayında olduğundan emin olun.`);
         resetWatchUI();
       });
 
-      // Çağrı sonlandığında (yayıncı kapatırsa veya bağlantı koparsa) tetiklenir.
       call.on('close', () => {
-        console.log(`Çağrı (${call.peer} ile) sonlandı/kapatıldı.`);
-        alert('Yayın bağlantısı kapandı.');
+        console.log(`Çağrı (${call.peer} ile) sonlandı/kapatıldı (izleyici tarafı).`);
+        // alert('Yayın bağlantısı kapandı.'); // Kullanıcıyı çok fazla alert ile yormamak için bunu kapatabiliriz.
+        console.log('Yayın bağlantısı kapandı.');
         resetWatchUI();
       });
     };
 
     function resetWatchUI() {
+        console.log("resetWatchUI çağrıldı.");
         videoElement.srcObject = null;
+        videoElement.muted = true; // Sesi tekrar kapat
         if (currentCall) {
-            currentCall.removeAllListeners(); // Bellek sızıntılarını önlemek için tüm listener'ları kaldır
+            currentCall.removeAllListeners(); 
             currentCall = null;
         }
         watchButton.textContent = "📺 İzle";
         targetIdInput.disabled = false;
-        // Eğer kendi yayınımızı yapmıyorsak yayın başlatma butonunu aktif et
-        if (!localStream && peer && !peer.disconnected && !peer.destroyed) {
+        
+        // Eğer kendi yayınımızı yapmıyorsak ve PeerJS bağlantısı sağlamsa yayın başlatma butonunu aktif et
+        if (!localStream && peer && peer.open && !peer.destroyed) {
             startButton.disabled = false;
+        } else if (localStream) { // Eğer yayın yapıyorsak, yayın başlatma butonu "Yayını Durdur" olarak kalmalı ve aktif olmalı
+             startButton.disabled = false;
+        } else { // PeerJS bağlantısı sağlıklı değilse veya yayın yapılıyorsa, startButton devre dışı kalsın.
+            startButton.disabled = true;
         }
     }
 
